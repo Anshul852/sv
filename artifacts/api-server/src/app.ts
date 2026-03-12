@@ -1,13 +1,22 @@
 import express, { type Express } from "express";
 import cors from "cors";
-import router from "./routes";
+import { createProxyMiddleware } from "http-proxy-middleware";
 
 const app: Express = express();
 
-app.use(cors());
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(cors({ origin: "*" }));
 
-app.use("/api", router);
+// Proxy all requests to the Python FastAPI backend
+app.use(
+  createProxyMiddleware({
+    target: "http://localhost:8000",
+    changeOrigin: true,
+    on: {
+      error: (_err, _req, res: any) => {
+        res.status(502).json({ error: "Backend unavailable. Python API server may be starting up." });
+      }
+    }
+  })
+);
 
 export default app;
