@@ -1,36 +1,14 @@
 <script lang="ts">
-  import { onMount, onDestroy } from "svelte";
+  import { onMount, onDestroy, tick } from "svelte";
   import { goto } from "$app/navigation";
-  import { user } from "$lib/stores/auth";
   import { chatStore } from "$lib/stores/chatStore";
   import { processMessage } from "$lib/chatbot/cleanChatbot";
-  import ChatMessages from "$lib/components/chatbot/ChatMessages.svelte";
   import {
-    BookOpen,
-    Calendar,
-    Zap,
-    BarChart2,
-    Scan,
-    CalendarPlus,
-    Brain,
-    HeartHandshake,
-    Plus,
-    MessageSquare,
-    Settings,
-    Trash2,
-    PanelRight,
-    Menu,
-    BookMarked,
-    X,
-    Camera,
-    Paperclip,
-    ArrowUp,
-    Check,
-    Mic,
-    Share2,
-    ChevronDown,
-    FileText,
-    Smartphone,
+    Plus, MessageSquare, Trash2, Send, Zap, Bot,
+    User, Copy, ThumbsUp, ThumbsDown, RefreshCw,
+    BookOpen, Calendar, Brain, BarChart2, Check,
+    Loader2, ChevronDown, X, Menu, Sparkles,
+    GraduationCap
   } from "lucide-svelte";
 
   // ── State ──────────────────────────────────────
@@ -38,93 +16,44 @@
   let loading = true;
   let inputText = "";
   let isTyping = false;
-  let mobileSidebarOpen = false;
-  let contextPanelOpen = true;
-  let activeConnector = "StudyVault AI";
-  let connectorDropdownOpen = false;
-  let moreOptionsOpen = false;
-  let chatTitle = "Focus Session";
+  let messagesEl: HTMLElement;
+  let inputEl: HTMLTextAreaElement;
+  let sidebarOpen = false;
+  let copiedId = "";
 
-  // Subscribe to chat store
   const { currentChat } = chatStore;
   $: messages = $currentChat?.messages || [];
+  $: conversations = $chatStore?.conversations || [];
+  $: currentChatId = $chatStore?.currentChatId;
 
-  const connectors = [
-    {
-      id: "studyvault",
-      name: "StudyVault AI",
-      color: "#a3e635",
-      category: "ai",
-      isConnected: true,
-      isActive: true,
-      icon: "SV",
-    },
-    {
-      id: "claude",
-      name: "Claude",
-      color: "#FF6B35",
-      category: "ai",
-      isConnected: false,
-      isActive: false,
-      icon: "◆",
-    },
-    {
-      id: "gemini",
-      name: "Gemini",
-      color: "#4285F4",
-      category: "ai",
-      isConnected: false,
-      isActive: false,
-      icon: "✦",
-    },
-    {
-      id: "obsidian",
-      name: "Obsidian",
-      color: "#7C3AED",
-      category: "note",
-      isConnected: false,
-      isActive: false,
-      icon: "💎",
-    },
-    {
-      id: "notion",
-      name: "Notion",
-      color: "#000000",
-      category: "note",
-      isConnected: false,
-      isActive: false,
-      icon: "📋",
-    },
+  const suggestions = [
+    { icon: BookOpen, text: "Create a study plan for my exam next week" },
+    { icon: Brain,    text: "Explain machine learning with simple examples" },
+    { icon: Calendar, text: "Schedule my study sessions for today" },
+    { icon: BarChart2,text: "Analyze my weak areas and suggest resources" },
   ];
 
   async function sendMessage() {
     if (!inputText.trim() || isTyping) return;
-
-    const messageText = inputText;
+    const text = inputText.trim();
     inputText = "";
+    await tick();
+    resizeTextarea();
     isTyping = true;
+    scrollToBottom();
 
     try {
-      // processMessage in cleanChatbot.ts handles adding the user message
       await processMessage({
-        input: messageText,
+        input: text,
         conversationId: "current",
         connectorId: "studyvault",
         profile: null,
-        onChunk: () => {},
-        onComplete: () => {
-          isTyping = false;
-        },
-        onError: (error: string) => {
-          console.error("Chat error:", error);
-          isTyping = false;
-        },
+        onChunk: () => scrollToBottom(),
+        onComplete: () => { isTyping = false; scrollToBottom(); },
+        onError: () => { isTyping = false; },
       });
-    } catch (error) {
-      console.error("Send error:", error);
+    } catch {
       isTyping = false;
-    } finally {
-      isTyping = false; // Emergency fallback
     }
   }
 
@@ -135,926 +64,324 @@
     }
   }
 
-  function toggleMobileSidebar() {
-    mobileSidebarOpen = !mobileSidebarOpen;
-  }
-  function toggleContextPanel() {
-    contextPanelOpen = !contextPanelOpen;
-  }
-  function clearChat() {
-    chatStore.clearChat();
+  function resizeTextarea() {
+    if (!inputEl) return;
+    inputEl.style.height = "auto";
+    inputEl.style.height = Math.min(inputEl.scrollHeight, 160) + "px";
   }
 
-  function getTimeGreeting() {
-    const hour = new Date().getHours();
-    if (hour < 12) return "Good morning";
-    if (hour < 18) return "Good afternoon";
-    return "Good evening";
+  async function scrollToBottom() {
+    await tick();
+    if (messagesEl) {
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    }
   }
 
-  function handleSuggestionClick(suggestion: string) {
-    inputText = suggestion;
+  function copyMessage(content: string, id: string) {
+    navigator.clipboard.writeText(content);
+    copiedId = id;
+    setTimeout(() => (copiedId = ""), 2000);
+  }
+
+  function useSuggestion(text: string) {
+    inputText = text;
     sendMessage();
   }
 
-  function selectConnector(connectorId: string) {
-    connectors.forEach((c) => (c.isActive = c.id === connectorId));
-    activeConnector =
-      connectors.find((c) => c.id === connectorId)?.name || "StudyVault AI";
-    connectorDropdownOpen = false;
+  function formatTime(ts: number) {
+    return new Date(ts).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
   }
 
-  function closeAllDropdowns() {
-    connectorDropdownOpen = false;
-    moreOptionsOpen = false;
+  function renderContent(content: string): string {
+    return content
+      .replace(/\*\*(.*?)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*(.*?)\*/g, "<em>$1</em>")
+      .replace(/`([^`]+)`/g, "<code>$1</code>")
+      .replace(/\n/g, "<br>");
   }
 
-  function handleMoreOptionClick(action: string) {
-    moreOptionsOpen = false;
-    if (action === "add-connector") goto("/settings/connectors");
-    console.log("Action triggered:", action);
+  function truncateTitle(title: string) {
+    return title.length > 28 ? title.slice(0, 28) + "…" : title;
   }
+
+  $: if (messages.length) scrollToBottom();
 
   onMount(async () => {
-    // Initialize chat store (loads DB and ensures currentChatId)
     await chatStore.initializeWithoutAuth();
-
-    setTimeout(() => {
-      loading = false;
-      mounted = true;
-    }, 800);
+    setTimeout(() => { loading = false; mounted = true; }, 600);
   });
 </script>
 
 <svelte:head><title>AI Chat — StudyVault</title></svelte:head>
-<svelte:window on:click={closeAllDropdowns} />
 
 {#if loading}
-  <div class="loading-overlay">
-    <div class="background-glow"></div>
-    <div class="loading-inner">
-      <div class="loading-icon">
-        <Zap size={32} fill="#a3e635" />
+  <div class="fixed inset-0 z-50 flex items-center justify-center bg-[#0A0A0B]">
+    <div class="flex flex-col items-center gap-4">
+      <div class="w-14 h-14 rounded-2xl bg-[#a3e635]/10 border border-[#a3e635]/20 flex items-center justify-center animate-pulse">
+        <Zap size={28} fill="#a3e635" color="#a3e635" />
       </div>
-      <p class="loading-text">StudyVault AI</p>
-      <div class="loading-status">Synchronizing neural pathways...</div>
-      <div class="loading-bar"><div class="loading-fill" /></div>
+      <p class="text-[#a3e635] font-semibold tracking-wide text-sm">StudyVault AI</p>
+      <div class="w-40 h-0.5 bg-[#1e1e22] rounded-full overflow-hidden">
+        <div class="h-full bg-[#a3e635] rounded-full animate-[loading-bar_1.2s_ease-in-out_infinite]" style="width:60%"></div>
+      </div>
     </div>
   </div>
 {/if}
 
-<div class="page" class:mounted>
-  <header class="page-header">
-    <div class="header-left">
-      <div class="header-icon">
-        <MessageSquare size={14} strokeWidth={2} />
-      </div>
-      <div>
-        <h1 class="page-title">AI Chat</h1>
-        <p class="page-sub">
-          Intelligent study assistant with classical algorithms
-        </p>
-      </div>
-    </div>
-    <div class="header-actions">
-      <button class="ghost-btn" on:click={toggleContextPanel}>
-        <PanelRight size={14} strokeWidth={2} />
-        Context
-      </button>
-      <button class="accent-btn" on:click={() => chatStore.newChat()}>
-        <Plus size={14} strokeWidth={2} />
-        New Chat
-      </button>
-    </div>
-  </header>
+<div class="flex h-[calc(100vh-0px)] bg-[#0A0A0B] overflow-hidden" class:opacity-0={!mounted} style="transition: opacity 0.4s ease">
 
-  <div class="divider" />
-
-  <div class="main-layout">
-    <div class="sidebar" class:mobile-open={mobileSidebarOpen}>
-      <div class="sidebar-top">
-        <div class="logo-row">
-          <div class="logo-icon">SV</div>
-          <span class="logo-text">StudyVault AI</span>
+  <!-- ── Sidebar ── -->
+  <div
+    class="flex flex-col border-r border-white/[0.06] transition-all duration-300 bg-[#0d0d10]"
+    class:w-64={sidebarOpen}
+    class:w-14={!sidebarOpen}
+  >
+    <!-- Sidebar toggle -->
+    <div class="flex items-center gap-2 p-3 border-b border-white/[0.06]">
+      <button
+        class="w-8 h-8 flex items-center justify-center rounded-lg text-white/40 hover:text-white/80 hover:bg-white/[0.06] transition-colors"
+        on:click={() => sidebarOpen = !sidebarOpen}
+      >
+        <Menu size={16} />
+      </button>
+      {#if sidebarOpen}
+        <div class="flex items-center gap-2 overflow-hidden">
+          <div class="w-5 h-5 rounded bg-[#a3e635] flex items-center justify-center flex-shrink-0">
+            <GraduationCap size={11} color="#0A0A0B" />
+          </div>
+          <span class="text-sm font-semibold text-white/90 whitespace-nowrap">StudyVault AI</span>
         </div>
+      {/if}
+    </div>
 
-        <button class="new-chat-btn" on:click={() => chatStore.newChat()}>
-          <Plus size={16} />
-          <span>New Chat</span>
-        </button>
+    <!-- New Chat -->
+    <div class="p-2">
+      <button
+        class="flex items-center gap-2 w-full rounded-lg px-2 py-2 text-white/60 hover:text-white/90 hover:bg-white/[0.06] transition-colors text-sm"
+        on:click={() => chatStore.newChat()}
+        title="New Chat"
+      >
+        <Plus size={16} class="flex-shrink-0" />
+        {#if sidebarOpen}<span>New Chat</span>{/if}
+      </button>
+    </div>
 
-        <button
-          class="connector-chip-sidebar"
-          on:click|stopPropagation={() =>
-            (connectorDropdownOpen = !connectorDropdownOpen)}
-        >
-          <div
-            class="connector-dot"
-            style="background: {connectors.find((c) => c.isActive)?.color}"
-          ></div>
-          <span class="connector-name"
-            >{connectors.find((c) => c.isActive)?.name}</span
+    <!-- Conversations list -->
+    {#if sidebarOpen}
+      <div class="flex-1 overflow-y-auto px-2 py-1 flex flex-col gap-0.5">
+        {#if conversations.length === 0}
+          <p class="text-white/25 text-xs px-2 py-2">No conversations yet</p>
+        {:else}
+          {#each conversations as conv}
+            <button
+              class="w-full text-left px-2 py-2 rounded-lg text-xs transition-colors group flex items-center gap-2 {conv.id === currentChatId ? 'bg-white/10 text-white/90' : 'text-white/50 hover:bg-white/5'}"
+              on:click={() => chatStore.setCurrentChat(conv.id)}
+            >
+              <MessageSquare size={12} class="flex-shrink-0 opacity-60" />
+              <span class="truncate flex-1">{truncateTitle(conv.title)}</span>
+            </button>
+          {/each}
+        {/if}
+      </div>
+    {:else}
+      <div class="flex-1 overflow-y-auto flex flex-col items-center gap-1 py-2">
+        {#each conversations.slice(0, 6) as conv}
+          <button
+            class="w-8 h-8 flex items-center justify-center rounded-lg transition-colors {conv.id === currentChatId ? 'bg-white/10 text-lime-400' : 'text-white/30 hover:bg-white/5'}"
+            on:click={() => chatStore.setCurrentChat(conv.id)}
+            title={conv.title}
           >
-          <ChevronDown size={14} />
-        </button>
+            <MessageSquare size={13} />
+          </button>
+        {/each}
+      </div>
+    {/if}
+  </div>
 
-        {#if connectorDropdownOpen}
-          <div class="connector-dropdown">
-            {#each connectors as connector}
+  <!-- ── Main Chat Area ── -->
+  <div class="flex-1 flex flex-col min-w-0">
+
+    <!-- Top bar -->
+    <div class="flex items-center justify-between px-5 py-3 border-b border-white/[0.06]">
+      <div class="flex items-center gap-3">
+        <div class="flex items-center gap-2">
+          <div class="w-7 h-7 rounded-lg bg-[#a3e635]/10 border border-[#a3e635]/20 flex items-center justify-center">
+            <Sparkles size={13} color="#a3e635" />
+          </div>
+          <div>
+            <p class="text-sm font-semibold text-white/90 leading-none">StudyVault AI</p>
+            <p class="text-[10px] text-[#a3e635] mt-0.5">Online · Classical AI Pipeline</p>
+          </div>
+        </div>
+      </div>
+      <button
+        class="text-xs text-white/30 hover:text-white/60 flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-white/[0.05] transition-colors"
+        on:click={() => chatStore.clearChat()}
+      >
+        <Trash2 size={12} />
+        Clear
+      </button>
+    </div>
+
+    <!-- Messages area -->
+    <div class="flex-1 overflow-y-auto" bind:this={messagesEl}>
+      {#if messages.length === 0}
+        <!-- Empty state -->
+        <div class="flex flex-col items-center justify-center h-full px-6 py-12">
+          <div class="w-16 h-16 rounded-2xl bg-[#a3e635]/8 border border-[#a3e635]/15 flex items-center justify-center mb-5">
+            <Bot size={30} color="#a3e635" opacity="0.8" />
+          </div>
+          <h2 class="text-xl font-bold text-white/90 mb-1.5">How can I help you study?</h2>
+          <p class="text-sm text-white/40 text-center max-w-sm mb-8">
+            I use classical AI algorithms — fuzzy logic, Dempster-Shafer, HTN planning — to give you personalized academic support.
+          </p>
+          <div class="grid grid-cols-1 sm:grid-cols-2 gap-2.5 w-full max-w-xl">
+            {#each suggestions as s}
               <button
-                class="connector-option"
-                class:active={connector.isActive}
-                on:click={() => selectConnector(connector.id)}
+                class="flex items-center gap-3 px-4 py-3 rounded-xl border border-white/[0.07] bg-white/[0.02] hover:bg-white/[0.05] hover:border-white/[0.12] transition-all text-left group"
+                on:click={() => useSuggestion(s.text)}
               >
-                <span class="option-icon" style="color: {connector.color}"
-                  >{connector.icon}</span
-                >
-                <span class="option-name">{connector.name}</span>
-                {#if connector.isActive}<Check size={14} />{/if}
+                <div class="w-7 h-7 rounded-lg bg-[#a3e635]/10 flex items-center justify-center flex-shrink-0 group-hover:bg-[#a3e635]/20 transition-colors">
+                  <svelte:component this={s.icon} size={14} color="#a3e635" />
+                </div>
+                <span class="text-xs text-white/60 group-hover:text-white/80 transition-colors leading-relaxed">{s.text}</span>
               </button>
             {/each}
           </div>
-        {/if}
-      </div>
-
-      <div class="conversation-list">
-        <div class="recents-label">RECENTS</div>
-        <div class="conversation-item active">
-          <MessageSquare size={15} />
-          <div class="conversation-content">
-            <div class="conversation-title">{chatTitle}</div>
-            <div class="conversation-preview">
-              {#if messages.length > 0}
-                {messages[messages.length - 1].content.slice(0, 30)}...
-              {:else}
-                No messages yet
-              {/if}
-            </div>
-          </div>
         </div>
-      </div>
-
-      <div class="sidebar-bottom">
-        <div class="user-avatar">{$user?.email?.[0].toUpperCase() || "U"}</div>
-        <div class="user-name">
-          {$user?.user_metadata?.full_name ||
-            $user?.email?.split("@")[0] ||
-            "Student"}
-        </div>
-        <button class="settings-btn" on:click={() => goto("/settings")}>
-          <Settings size={16} />
-        </button>
-      </div>
-    </div>
-
-    <div class="main-chat">
-      <div class="chat-header-inner">
-        <button class="mobile-menu-btn" on:click={toggleMobileSidebar}
-          ><Menu size={20} /></button
-        >
-        <div class="chat-title-text">{activeConnector}</div>
-        <div class="header-right-actions">
-          <button class="header-btn" on:click={clearChat}
-            ><Trash2 size={18} /></button
-          >
-        </div>
-      </div>
-
-      <div class="messages-area">
-        {#if messages.length === 0}
-          <div class="empty-state">
-            <div class="welcome-badge">SYSTEMS ACTIVE</div>
-            <div class="greeting">
-              {getTimeGreeting()}, {$user?.user_metadata?.full_name?.split(
-                " ",
-              )[0] || "Scholar"}
-            </div>
-            <div class="subtitle">
-              I've analyzed your current study trajectory. Ready for a
-              breakthrough?
-            </div>
-
-            <div class="suggestion-grid">
-              <button
-                class="suggestion-pill"
-                on:click={() =>
-                  handleSuggestionClick("Summarize my Algorithms notes")}
-              >
-                <BookMarked size={14} /> Summarize my Algorithms notes
-              </button>
-              <button
-                class="suggestion-pill"
-                on:click={() =>
-                  handleSuggestionClick("Build a 7-day crunch plan")}
-              >
-                <Calendar size={14} /> Build a 7-day crunch plan
-              </button>
-              <button
-                class="suggestion-pill"
-                on:click={() =>
-                  handleSuggestionClick("Quiz me on Big O notation")}
-              >
-                <Brain size={14} /> Quiz me on Big O notation
-              </button>
-              <button
-                class="suggestion-pill"
-                on:click={() =>
-                  handleSuggestionClick("Help me with study anxiety")}
-              >
-                <HeartHandshake size={14} /> Help me with study anxiety
-              </button>
-            </div>
-          </div>
-        {:else}
-          <div class="messages-container">
-            <ChatMessages {messages} />
-            {#if isTyping && !messages.some((m) => m.isStreaming)}
-              <div class="typing-indicator-wrapper">
-                <div class="typing-bubble">
-                  <div class="dot"></div>
-                  <div class="dot"></div>
-                  <div class="dot"></div>
+      {:else}
+        <div class="max-w-3xl mx-auto px-4 py-6 flex flex-col gap-6">
+          {#each messages as msg (msg.id)}
+            {#if msg.role === 'user'}
+              <!-- User message -->
+              <div class="flex justify-end">
+                <div class="flex items-end gap-2.5 max-w-[75%]">
+                  <div class="flex flex-col items-end gap-1">
+                    <div class="bg-[#a3e635]/12 border border-[#a3e635]/20 rounded-2xl rounded-br-md px-4 py-3 text-sm text-white/90 leading-relaxed">
+                      {msg.content}
+                    </div>
+                    <span class="text-[10px] text-white/20">{formatTime(msg.timestamp)}</span>
+                  </div>
+                  <div class="w-7 h-7 rounded-full bg-white/10 border border-white/10 flex items-center justify-center flex-shrink-0 mb-5">
+                    <User size={13} color="rgba(255,255,255,0.6)" />
+                  </div>
+                </div>
+              </div>
+            {:else if msg.role === 'assistant'}
+              <!-- Assistant message -->
+              <div class="flex gap-2.5">
+                <div class="w-7 h-7 rounded-full bg-[#a3e635]/15 border border-[#a3e635]/25 flex items-center justify-center flex-shrink-0 mt-1">
+                  <Zap size={13} fill="#a3e635" color="#a3e635" />
+                </div>
+                <div class="flex-1 min-w-0">
+                  <div class="rounded-2xl rounded-tl-md px-4 py-3 bg-[#111114] border border-white/[0.06] text-sm text-white/85 leading-relaxed">
+                    {#if msg.isStreaming && !msg.content}
+                      <div class="flex items-center gap-1.5 py-1">
+                        <span class="w-1.5 h-1.5 rounded-full bg-[#a3e635]/70 animate-bounce" style="animation-delay:0ms"></span>
+                        <span class="w-1.5 h-1.5 rounded-full bg-[#a3e635]/70 animate-bounce" style="animation-delay:150ms"></span>
+                        <span class="w-1.5 h-1.5 rounded-full bg-[#a3e635]/70 animate-bounce" style="animation-delay:300ms"></span>
+                      </div>
+                    {:else}
+                      {@html renderContent(msg.content)}
+                      {#if msg.isStreaming}
+                        <span class="inline-block w-0.5 h-4 bg-[#a3e635] ml-0.5 animate-pulse align-middle"></span>
+                      {/if}
+                    {/if}
+                  </div>
+                  {#if !msg.isStreaming}
+                    <div class="flex items-center gap-1 mt-1.5 ml-1">
+                      <span class="text-[10px] text-white/20 mr-1">{formatTime(msg.timestamp)}</span>
+                      <button
+                        class="w-6 h-6 flex items-center justify-center rounded-md text-white/25 hover:text-white/60 hover:bg-white/[0.06] transition-colors"
+                        on:click={() => copyMessage(msg.content, msg.id)}
+                        title="Copy"
+                      >
+                        {#if copiedId === msg.id}
+                          <Check size={11} color="#a3e635" />
+                        {:else}
+                          <Copy size={11} />
+                        {/if}
+                      </button>
+                      <button class="w-6 h-6 flex items-center justify-center rounded-md text-white/25 hover:text-white/60 hover:bg-white/[0.06] transition-colors" title="Good response">
+                        <ThumbsUp size={11} />
+                      </button>
+                      <button class="w-6 h-6 flex items-center justify-center rounded-md text-white/25 hover:text-white/60 hover:bg-white/[0.06] transition-colors" title="Bad response">
+                        <ThumbsDown size={11} />
+                      </button>
+                    </div>
+                  {/if}
                 </div>
               </div>
             {/if}
-          </div>
-        {/if}
-      </div>
+          {/each}
 
-      <div class="input-wrapper">
-        <div class="input-container-modern">
-          <div class="attachment-container">
-            <button
-              class="attachment-btn"
-              on:click|stopPropagation={() =>
-                (moreOptionsOpen = !moreOptionsOpen)}><Plus size={20} /></button
-            >
-
-            {#if moreOptionsOpen}
-              <div
-                class="more-options-dropdown"
-                role="menu"
-                tabindex="-1"
-                on:click|stopPropagation
-                on:keydown={(e) => e.stopPropagation()}
-              >
-                <button
-                  class="more-option-btn-v2"
-                  on:click={() => handleMoreOptionClick("file")}
-                >
-                  <FileText size={18} /> <span>Upload Document</span>
-                </button>
-                <button
-                  class="more-option-btn-v2"
-                  on:click={() => handleMoreOptionClick("camera")}
-                >
-                  <Camera size={18} /> <span>Scan with Camera</span>
-                </button>
-                <button
-                  class="more-option-btn-v2"
-                  on:click={() => handleMoreOptionClick("connector")}
-                >
-                  <Zap size={18} /> <span>Add AI Connector</span>
-                </button>
-                <button
-                  class="more-option-btn-v2"
-                  on:click={() => handleMoreOptionClick("mobile")}
-                >
-                  <Smartphone size={18} /> <span>Sync Mobile App</span>
-                </button>
+          {#if isTyping && messages[messages.length-1]?.role !== 'assistant'}
+            <div class="flex gap-2.5">
+              <div class="w-7 h-7 rounded-full bg-[#a3e635]/15 border border-[#a3e635]/25 flex items-center justify-center flex-shrink-0">
+                <Zap size={13} fill="#a3e635" color="#a3e635" />
               </div>
-            {/if}
-          </div>
-
-          <textarea
-            class="modern-input"
-            bind:value={inputText}
-            placeholder="Ask StudyVault anything..."
-            on:keydown={handleKeydown}
-            rows="1"
-          ></textarea>
-          <div class="input-right">
-            <button class="voice-btn"><Mic size={18} /></button>
-            <button
-              class="send-btn-modern"
-              class:active={inputText.trim()}
-              on:click={sendMessage}
-              disabled={!inputText.trim()}
-            >
-              <ArrowUp size={20} />
-            </button>
-          </div>
+              <div class="bg-[#111114] border border-white/[0.06] rounded-2xl rounded-tl-md px-4 py-3">
+                <div class="flex items-center gap-1.5">
+                  <span class="w-1.5 h-1.5 rounded-full bg-[#a3e635]/70 animate-bounce" style="animation-delay:0ms"></span>
+                  <span class="w-1.5 h-1.5 rounded-full bg-[#a3e635]/70 animate-bounce" style="animation-delay:150ms"></span>
+                  <span class="w-1.5 h-1.5 rounded-full bg-[#a3e635]/70 animate-bounce" style="animation-delay:300ms"></span>
+                </div>
+              </div>
+            </div>
+          {/if}
         </div>
-        <div class="input-disclaimer">
-          StudyVault AI reasoning uses Discrete Agentic Pipelines. No training
-          data used.
-        </div>
-      </div>
+      {/if}
     </div>
 
-    {#if contextPanelOpen}
-      <div class="context-panel">
-        <div class="context-header-inner">
-          <div class="section-title-wrapper">
-            <span class="section-dot" />
-            <span class="section-title-label">Context</span>
-          </div>
-          <button class="close-btn" on:click={toggleContextPanel}
-            ><X size={16} /></button
+    <!-- Input area -->
+    <div class="border-t border-white/[0.06] px-4 py-3">
+      <div class="max-w-3xl mx-auto">
+        <div class="flex items-end gap-2.5 bg-[#111114] border border-white/[0.08] rounded-2xl px-4 py-3 focus-within:border-[#a3e635]/30 transition-colors">
+          <textarea
+            bind:this={inputEl}
+            bind:value={inputText}
+            on:keydown={handleKeydown}
+            on:input={resizeTextarea}
+            placeholder="Ask anything about your studies…"
+            rows="1"
+            disabled={isTyping}
+            class="flex-1 bg-transparent text-sm text-white/90 placeholder-white/25 resize-none outline-none leading-relaxed max-h-40 disabled:opacity-50"
+            style="scrollbar-width:none"
+          ></textarea>
+          <button
+            on:click={sendMessage}
+            disabled={!inputText.trim() || isTyping}
+            class="w-8 h-8 flex items-center justify-center rounded-xl transition-all flex-shrink-0 mb-0.5 {inputText.trim() && !isTyping ? 'send-active' : 'opacity-30 bg-white/10'}"
           >
+            {#if isTyping}
+              <Loader2 size={15} color={inputText.trim() ? "#0A0A0B" : "rgba(255,255,255,0.4)"} class="animate-spin" />
+            {:else}
+              <Send size={15} color={inputText.trim() ? "#0A0A0B" : "rgba(255,255,255,0.4)"} />
+            {/if}
+          </button>
         </div>
-
-        <div class="context-scroll">
-          <div class="context-section">
-            <div class="sec-label">Student Profile</div>
-            <div class="context-row">
-              <span>Style</span> <span class="val">Visual</span>
-            </div>
-            <div class="context-row">
-              <span>Type</span> <span class="val">Achiever</span>
-            </div>
-          </div>
-          <div class="context-section">
-            <div class="sec-label">Performance</div>
-            <div class="context-row">
-              <span>Retention</span> <span class="val">78%</span>
-            </div>
-            <div class="context-row">
-              <span>Streak</span> <span class="val">3 days</span>
-            </div>
-          </div>
-          <div class="context-section">
-            <div class="sec-label">Active Subject</div>
-            <div class="active-badge">Computer Science 101</div>
-          </div>
-        </div>
+        <p class="text-center text-[10px] text-white/15 mt-2">Powered by classical AI — fuzzy logic · Dempster-Shafer · HTN planning</p>
       </div>
-    {/if}
+    </div>
   </div>
 </div>
 
 <style>
-  @import url("https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&display=swap");
-
-  :global(body) {
-    background: #0a0a0b;
-    color: white;
-    margin: 0;
-    overflow: hidden;
+  :global(.send-active) {
+    background-color: #a3e635;
   }
-
-  .page {
-    font-family: "Geist", sans-serif;
-    display: flex;
-    flex-direction: column;
-    padding: 24px 32px;
-    height: 100vh;
-    box-sizing: border-box;
-    opacity: 0;
-    transition: opacity 0.5s;
-  }
-  .page.mounted {
-    opacity: 1;
-  }
-
-  .page-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 20px;
-  }
-  .header-left {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-  }
-  .header-icon {
-    width: 32px;
-    height: 32px;
-    background: rgba(163, 230, 53, 0.1);
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  :global(code) {
+    background: rgba(163,230,53,0.1);
     color: #a3e635;
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 0.8em;
+    font-family: 'JetBrains Mono', monospace;
   }
-  .page-title {
-    font-size: 18px;
-    font-weight: 700;
-    margin: 0;
-  }
-  .page-sub {
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.3);
-    margin: 0;
-  }
-  .header-actions {
-    display: flex;
-    gap: 10px;
-  }
+  textarea::-webkit-scrollbar { display: none; }
 
-  .ghost-btn {
-    background: transparent;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    color: rgba(255, 255, 255, 0.5);
-    padding: 6px 14px;
-    border-radius: 8px;
-    font-size: 12px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-  .accent-btn {
-    background: #a3e635;
-    color: black;
-    border: none;
-    padding: 6px 14px;
-    border-radius: 8px;
-    font-weight: 700;
-    font-size: 12px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .divider {
-    height: 1px;
-    background: rgba(255, 255, 255, 0.05);
-    margin-bottom: 24px;
-  }
-
-  .main-layout {
-    display: grid;
-    grid-template-columns: 260px 1fr 280px;
-    gap: 20px;
-    flex: 1;
-    min-height: 0;
-  }
-
-  .sidebar {
-    background: #0e0e10;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 16px;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-  .sidebar-top {
-    padding: 20px;
-  }
-  .logo-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 20px;
-  }
-  .logo-icon {
-    width: 28px;
-    height: 28px;
-    background: #a3e635;
-    border-radius: 6px;
-    color: black;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 800;
-    font-size: 11px;
-  }
-  .logo-text {
-    font-weight: 600;
-    font-size: 14px;
-  }
-  .new-chat-btn {
-    width: 100%;
-    padding: 10px;
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    border-radius: 8px;
-    color: white;
-    font-size: 13px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin-bottom: 16px;
-  }
-
-  .connector-chip-sidebar {
-    width: 100%;
-    padding: 8px 12px;
-    background: rgba(163, 230, 53, 0.05);
-    border: 1px solid rgba(163, 230, 53, 0.1);
-    border-radius: 8px;
-    color: #a3e635;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    cursor: pointer;
-    font-size: 13px;
-  }
-  .connector-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-  }
-
-  .connector-dropdown {
-    margin-top: 8px;
-    background: #1a1a1c;
-    border-radius: 8px;
-    overflow: hidden;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-  }
-  .connector-option {
-    width: 100%;
-    padding: 8px 12px;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    background: transparent;
-    border: none;
-    color: rgba(255, 255, 255, 0.6);
-    cursor: pointer;
-    font-size: 12px;
-    text-align: left;
-  }
-  .connector-option.active {
-    background: rgba(163, 230, 53, 0.1);
-    color: #a3e635;
-  }
-  .option-icon {
-    width: 16px;
-    text-align: center;
-  }
-
-  .conversation-list {
-    flex: 1;
-    padding: 20px 8px;
-    overflow-y: auto;
-  }
-  .recents-label {
-    font-size: 10px;
-    font-weight: 700;
-    color: rgba(255, 255, 255, 0.2);
-    letter-spacing: 0.1em;
-    margin-bottom: 12px;
-    padding: 0 12px;
-  }
-  .conversation-item {
-    padding: 10px 12px;
-    border-radius: 8px;
-    display: flex;
-    gap: 12px;
-    color: rgba(255, 255, 255, 0.4);
-    cursor: pointer;
-    transition: background 0.2s;
-  }
-  .conversation-item.active {
-    background: rgba(255, 255, 255, 0.03);
-    color: white;
-  }
-  .conversation-title {
-    font-size: 13px;
-    font-weight: 500;
-  }
-  .conversation-preview {
-    font-size: 11px;
-    opacity: 0.5;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .sidebar-bottom {
-    padding: 16px;
-    border-top: 1px solid rgba(255, 255, 255, 0.05);
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-  .user-avatar {
-    width: 28px;
-    height: 28px;
-    background: #a3e635;
-    border-radius: 50%;
-    color: black;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-weight: 700;
-    font-size: 11px;
-  }
-  .user-name {
-    font-size: 12px;
-    flex: 1;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .main-chat {
-    background: #0e0e10;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 16px;
-    display: flex;
-    flex-direction: column;
-    position: relative;
-  }
-  .chat-header-inner {
-    height: 56px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    display: flex;
-    align-items: center;
-    padding: 0 20px;
-    justify-content: space-between;
-    border-radius: 16px 16px 0 0;
-    overflow: hidden;
-  }
-  .chat-title-text {
-    font-size: 14px;
-    font-weight: 600;
-    color: #a3e635;
-  }
-  .messages-area {
-    flex: 1;
-    overflow-y: auto;
-    padding: 20px;
-    scroll-behavior: smooth;
-  }
-
-  .empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    max-width: 600px;
-    margin: 0 auto;
-    text-align: center;
-  }
-  .welcome-badge {
-    font-size: 9px;
-    font-weight: 800;
-    color: #a3e635;
-    border: 1px solid rgba(163, 230, 53, 0.2);
-    padding: 3px 8px;
-    border-radius: 20px;
-    margin-bottom: 20px;
-    letter-spacing: 0.1em;
-  }
-  .greeting {
-    font-size: 32px;
-    font-weight: 700;
-    margin-bottom: 12px;
-    letter-spacing: -0.02em;
-  }
-  .subtitle {
-    font-size: 15px;
-    color: rgba(255, 255, 255, 0.4);
-    margin-bottom: 40px;
-  }
-  .suggestion-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 12px;
-    width: 100%;
-  }
-  .suggestion-pill {
-    background: rgba(255, 255, 255, 0.02);
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    padding: 12px;
-    border-radius: 12px;
-    color: white;
-    font-size: 13px;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    transition: all 0.2s;
-  }
-  .suggestion-pill:hover {
-    border-color: rgba(163, 230, 53, 0.3);
-    background: rgba(163, 230, 53, 0.02);
-  }
-
-  .input-wrapper {
-    padding: 20px 40px 40px;
-  }
-  .input-container-modern {
-    background: rgba(255, 255, 255, 0.03);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 20px;
-    padding: 10px 12px 10px 16px;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    position: relative;
-  }
-  .modern-input {
-    flex: 1;
-    background: transparent;
-    border: none;
-    color: white;
-    resize: none;
-    font-family: inherit;
-    font-size: 14px;
-    max-height: 150px;
-  }
-  .modern-input:focus {
-    outline: none;
-  }
-  .send-btn-modern {
-    width: 36px;
-    height: 36px;
-    background: rgba(255, 255, 255, 0.05);
-    border: none;
-    border-radius: 10px;
-    color: rgba(255, 255, 255, 0.2);
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .send-btn-modern.active {
-    background: #a3e635;
-    color: black;
-    box-shadow: 0 0 15px rgba(163, 230, 53, 0.3);
-  }
-
-  .attachment-container {
-    position: relative;
-  }
-  .more-options-dropdown {
-    position: absolute;
-    bottom: calc(100% + 12px);
-    left: 0;
-    background: #1a1a1c;
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 14px;
-    width: 200px;
-    padding: 8px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-    z-index: 100;
-  }
-  .more-option-btn-v2 {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    padding: 10px 12px;
-    background: transparent;
-    border: none;
-    color: rgba(255, 255, 255, 0.7);
-    font-size: 13px;
-    cursor: pointer;
-    border-radius: 8px;
-    transition: all 0.2s;
-  }
-  .more-option-btn-v2:hover {
-    background: rgba(255, 255, 255, 0.05);
-    color: white;
-  }
-
-  .context-panel {
-    background: #0e0e10;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    border-radius: 16px;
-    display: flex;
-    flex-direction: column;
-  }
-  .context-header-inner {
-    padding: 16px;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-  .section-title-wrapper {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  .section-dot {
-    width: 6px;
-    height: 6px;
-    background: #a3e635;
-    border-radius: 50%;
-    box-shadow: 0 0 8px #a3e635;
-  }
-  .section-title-label {
-    font-size: 11px;
-    font-weight: 700;
-    text-transform: uppercase;
-    color: rgba(255, 255, 255, 0.3);
-  }
-  .context-scroll {
-    flex: 1;
-    overflow-y: auto;
-    padding: 20px;
-    display: flex;
-    flex-direction: column;
-    gap: 24px;
-  }
-  .sec-label {
-    font-size: 10px;
-    font-weight: 800;
-    color: rgba(255, 255, 255, 0.2);
-    text-transform: uppercase;
-    margin-bottom: 12px;
-  }
-  .context-row {
-    display: flex;
-    justify-content: space-between;
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.5);
-    padding: 4px 0;
-  }
-  .val {
-    color: rgba(255, 255, 255, 0.9);
-    font-weight: 600;
-  }
-  .active-badge {
-    background: rgba(163, 230, 53, 0.1);
-    border: 1px solid rgba(163, 230, 53, 0.2);
-    padding: 8px;
-    border-radius: 8px;
-    color: #a3e635;
-    font-size: 12px;
-    font-weight: 600;
-    text-align: center;
-  }
-
-  .loading-overlay {
-    position: fixed;
-    inset: 0;
-    background: #0a0a0b;
-    z-index: 1000;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  .loading-inner {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 16px;
-    text-align: center;
-  }
-  .loading-text {
-    font-size: 18px;
-    font-weight: 700;
-    color: white;
-    margin: 0;
-  }
-  .loading-status {
-    font-size: 10px;
-    color: #a3e635;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-  }
-  .loading-bar {
-    width: 150px;
-    height: 2px;
-    background: rgba(255, 255, 255, 0.1);
-    border-radius: 2px;
-    overflow: hidden;
-  }
-  .loading-fill {
-    height: 100%;
-    background: #a3e635;
-    width: 0;
-    animation: load 0.8s ease-in-out forwards;
-  }
-  @keyframes load {
-    to {
-      width: 100%;
-    }
-  }
-
-  .background-glow {
-    position: absolute;
-    width: 400px;
-    height: 400px;
-    background: radial-gradient(
-      circle,
-      rgba(163, 230, 53, 0.1) 0%,
-      transparent 70%
-    );
-    border-radius: 50%;
-    filter: blur(50px);
-    pointer-events: none;
-  }
-
-  @media (max-width: 1024px) {
-    .main-layout {
-      grid-template-columns: 1fr;
-    }
-    .sidebar,
-    .context-panel {
-      display: none;
-    }
+  @keyframes loading-bar {
+    0%   { transform: translateX(-100%); }
+    100% { transform: translateX(200%); }
   }
 </style>
