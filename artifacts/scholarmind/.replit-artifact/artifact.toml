@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "ScholarMind"
+version = "1.0.0"
+id = "artifacts/scholarmind"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+localPort = 22748
+name = "web"
+paths = ["/"]
+
+[services.development]
+run = "pnpm --filter @workspace/scholarmind run dev"
+
+[services.env]
+PORT = "22748"
+BASE_PATH = "/"
+
+[services.production]
+build = ["pnpm", "--filter", "@workspace/scholarmind", "run", "build"]
+publicDir = "artifacts/scholarmind/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
