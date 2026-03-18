@@ -1,6 +1,6 @@
 import type { ConversationMessage } from '$lib/types'
 import { buildStudentContext } from '$lib/connectors/contextBuilder'
-import { user } from '$lib/stores/auth'
+import { session } from '$lib/stores/auth'
 
 export interface StudyVaultConfig {
     apiUrl: string
@@ -20,10 +20,10 @@ export async function sendToStudyVault(
     onError: (error: string) => void
 ): Promise<void> {
     try {
-        // Get current user for auth token
+        // Get current session for auth token
         let authToken = '';
-        const unsubscribe = user.subscribe(currentUser => {
-            authToken = (currentUser as any)?.session?.access_token || '';
+        const unsubscribe = session.subscribe(s => {
+            authToken = s?.access_token || '';
         });
         unsubscribe();
 
